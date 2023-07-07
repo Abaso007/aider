@@ -201,7 +201,7 @@ class TestCoder(unittest.TestCase):
 
         def mock_send(*args, **kwargs):
             coder.partial_response_content = "ok"
-            coder.partial_response_function_call = dict()
+            coder.partial_response_function_call = {}
 
         coder.send = MagicMock(side_effect=mock_send)
 
@@ -229,7 +229,7 @@ class TestCoder(unittest.TestCase):
 
         def mock_send(*args, **kwargs):
             coder.partial_response_content = "ok"
-            coder.partial_response_function_call = dict()
+            coder.partial_response_function_call = {}
 
         coder.send = MagicMock(side_effect=mock_send)
 
@@ -261,7 +261,7 @@ class TestCoder(unittest.TestCase):
 
         def mock_send(*args, **kwargs):
             coder.partial_response_content = "ok"
-            coder.partial_response_function_call = dict()
+            coder.partial_response_function_call = {}
 
         coder.send = MagicMock(side_effect=mock_send)
 
@@ -291,7 +291,7 @@ class TestCoder(unittest.TestCase):
 
         def mock_send(*args, **kwargs):
             coder.partial_response_content = "ok"
-            coder.partial_response_function_call = dict()
+            coder.partial_response_function_call = {}
 
         coder.send = MagicMock(side_effect=mock_send)
 

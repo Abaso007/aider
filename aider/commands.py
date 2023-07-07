@@ -25,24 +25,18 @@ class Commands:
             return True
 
     def get_commands(self):
-        commands = []
-        for attr in dir(self):
-            if attr.startswith("cmd_"):
-                commands.append("/" + attr[4:])
-
-        return commands
+        return [f"/{attr[4:]}" for attr in dir(self) if attr.startswith("cmd_")]
 
     def get_command_completions(self, cmd_name, partial):
         cmd_completions_method_name = f"completions_{cmd_name}"
-        cmd_completions_method = getattr(self, cmd_completions_method_name, None)
-        if cmd_completions_method:
-            for completion in cmd_completions_method(partial):
-                yield completion
+        if cmd_completions_method := getattr(
+            self, cmd_completions_method_name, None
+        ):
+            yield from cmd_completions_method(partial)
 
     def do_run(self, cmd_name, args):
         cmd_method_name = f"cmd_{cmd_name}"
-        cmd_method = getattr(self, cmd_method_name, None)
-        if cmd_method:
+        if cmd_method := getattr(self, cmd_method_name, None):
             return cmd_method(args)
         else:
             self.io.tool_output(f"Error: Command {cmd_name} not found.")
@@ -121,7 +115,7 @@ class Commands:
             relative_fname = self.coder.get_rel_fname(fname)
             content = self.io.read_text(fname)
             # approximate
-            content = f"{relative_fname}\n```\n" + content + "```\n"
+            content = f"{relative_fname}\n```\n{content}" + "```\n"
             tokens = len(self.tokenizer.encode(content))
             res.append((tokens, f"{relative_fname}", "use /drop to drop from chat"))
 
@@ -173,8 +167,8 @@ class Commands:
         except git.exc.GitCommandError:
             has_origin = False
 
-        if has_origin:
-            if local_head == remote_head:
+        if local_head == remote_head:
+            if has_origin:
                 self.io.tool_error(
                     "The last commit has already been pushed to the origin. Undoing is not"
                     " possible."
@@ -279,8 +273,7 @@ class Commands:
         if not self.coder.cur_messages:
             return
 
-        reply = prompts.added_files.format(fnames=", ".join(added_fnames))
-        return reply
+        return prompts.added_files.format(fnames=", ".join(added_fnames))
 
     def completions_drop(self, partial):
         files = self.coder.get_inchat_relative_files()
@@ -324,11 +317,10 @@ class Commands:
             for line in combined_output.splitlines():
                 self.io.tool_output(line, log_only=True)
 
-            msg = prompts.run_output.format(
+            return prompts.run_output.format(
                 command=args,
                 output=combined_output,
             )
-            return msg
 
     def cmd_exit(self, args):
         "Exit the application"
@@ -367,8 +359,7 @@ class Commands:
         commands = sorted(self.get_commands())
         for cmd in commands:
             cmd_method_name = f"cmd_{cmd[1:]}"
-            cmd_method = getattr(self, cmd_method_name, None)
-            if cmd_method:
+            if cmd_method := getattr(self, cmd_method_name, None):
                 description = cmd_method.__doc__
                 self.io.tool_output(f"{cmd} {description}")
             else:

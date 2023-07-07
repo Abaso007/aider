@@ -19,9 +19,8 @@ class Model:
 
         tokens = None
 
-        match = re.search(r"-([0-9]+)k", name)
-        if match:
-            tokens = int(match.group(1))
+        if match := re.search(r"-([0-9]+)k", name):
+            tokens = int(match[1])
         else:
             for m, t in known_tokens.items():
                 if name.startswith(m):
@@ -37,27 +36,27 @@ class Model:
             self.use_repo_map = True
             self.send_undo_reply = True
 
-            if tokens == 8:
-                self.prompt_price = 0.03
-                self.completion_price = 0.06
-                self.always_available = True
-            elif tokens == 32:
+            if tokens == 32:
                 self.prompt_price = 0.06
                 self.completion_price = 0.12
 
+            elif tokens == 8:
+                self.prompt_price = 0.03
+                self.completion_price = 0.06
+                self.always_available = True
             return
 
         if self.is_gpt35():
             self.edit_format = "whole"
             self.always_available = True
 
-            if tokens == 4:
-                self.prompt_price = 0.0015
-                self.completion_price = 0.002
-            elif tokens == 16:
+            if tokens == 16:
                 self.prompt_price = 0.003
                 self.completion_price = 0.004
 
+            elif tokens == 4:
+                self.prompt_price = 0.0015
+                self.completion_price = 0.002
             return
 
         raise ValueError(f"Unsupported model: {name}")
