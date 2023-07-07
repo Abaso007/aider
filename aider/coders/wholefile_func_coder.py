@@ -102,11 +102,7 @@ class WholeFileFunctionCoder(Coder):
         full_path = os.path.abspath(os.path.join(self.root, fname))
 
         content = self.io.read_text(full_path)
-        if content is None:
-            orig_lines = []
-        else:
-            orig_lines = content.splitlines()
-
+        orig_lines = [] if content is None else content.splitlines()
         show_diff = diffs.diff_partial_update(
             orig_lines,
             lines,

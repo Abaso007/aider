@@ -64,11 +64,10 @@ class WholeFileCoder(Coder):
                             final=True,
                         ).splitlines()
                         output += show_diff
-                    else:
-                        if self.allowed_to_edit(fname):
-                            edited.add(fname)
-                            new_lines = "".join(new_lines)
-                            self.io.write_text(full_path, new_lines)
+                    elif self.allowed_to_edit(fname):
+                        edited.add(fname)
+                        new_lines = "".join(new_lines)
+                        self.io.write_text(full_path, new_lines)
 
                     fname = None
                     new_lines = []
@@ -82,16 +81,17 @@ class WholeFileCoder(Coder):
                     # the prompt.
                     if fname and fname not in chat_files and Path(fname).name in chat_files:
                         fname = Path(fname).name
-                if not fname:  # blank line? or ``` was on first line i==0
-                    if saw_fname:
+                if saw_fname:
+                    if not fname:
                         fname = saw_fname
-                    elif len(chat_files) == 1:
+                elif len(chat_files) == 1:
+                    if not fname:
                         fname = chat_files[0]
-                    else:
-                        # TODO: sense which file it is by diff size
-                        raise ValueError(
-                            f"No filename provided before {self.fence[0]} in file listing"
-                        )
+                elif not fname:
+                    # TODO: sense which file it is by diff size
+                    raise ValueError(
+                        f"No filename provided before {self.fence[0]} in file listing"
+                    )
 
             elif fname is not None:
                 new_lines.append(line)
@@ -122,8 +122,7 @@ class WholeFileCoder(Coder):
             return "\n".join(output)
 
         if fname:
-            full_path = self.allowed_to_edit(fname)
-            if full_path:
+            if full_path := self.allowed_to_edit(fname):
                 edited.add(fname)
                 new_lines = "".join(new_lines)
                 self.io.write_text(full_path, new_lines)

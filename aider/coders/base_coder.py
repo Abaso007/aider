@@ -48,15 +48,7 @@ class Coder:
     num_exhausted_context_windows = 0
 
     @classmethod
-    def create(
-        self,
-        main_model,
-        edit_format,
-        io,
-        openai_api_key,
-        openai_api_base="https://api.openai.com/v1",
-        **kwargs,
-    ):
+    def create(cls, main_model, edit_format, io, openai_api_key, openai_api_base="https://api.openai.com/v1", **kwargs):
         from . import (
             EditBlockCoder,
             EditBlockFunctionCoder,
@@ -157,7 +149,7 @@ class Coder:
         if use_git:
             self.set_repo(fnames)
         else:
-            self.abs_fnames = set([str(Path(fname).resolve()) for fname in fnames])
+            self.abs_fnames = {str(Path(fname).resolve()) for fname in fnames}
 
         if self.repo:
             rel_repo_dir = os.path.relpath(self.repo.git_dir, os.getcwd())
@@ -299,10 +291,9 @@ class Coder:
                 yield fname, content
 
     def choose_fence(self):
-        all_content = ""
-        for _fname, content in self.get_abs_fnames_content():
-            all_content += content + "\n"
-
+        all_content = "".join(
+            content + "\n" for _fname, content in self.get_abs_fnames_content()
+        )
         good = False
         for fence_open, fence_close in self.fences:
             if fence_open in all_content or fence_close in all_content:
@@ -348,8 +339,9 @@ class Coder:
 
         other_files = set(self.get_all_abs_files()) - set(self.abs_fnames)
         if self.repo_map:
-            repo_content = self.repo_map.get_repo_map(self.abs_fnames, other_files)
-            if repo_content:
+            if repo_content := self.repo_map.get_repo_map(
+                self.abs_fnames, other_files
+            ):
                 if all_content:
                     all_content += "\n"
                 all_content += repo_content
@@ -389,8 +381,7 @@ class Coder:
                 return
 
     def should_dirty_commit(self, inp):
-        is_commit_command = inp and inp.startswith("/commit")
-        if is_commit_command:
+        if is_commit_command := inp and inp.startswith("/commit"):
             return
 
         if not self.dirty_commits:
@@ -444,8 +435,7 @@ class Coder:
 
     def fmt_system_reminder(self):
         prompt = self.gpt_prompts.system_reminder
-        prompt = prompt.format(fence=self.fence)
-        return prompt
+        return prompt.format(fence=self.fence)
 
     def send_new_user_message(self, inp):
         self.choose_fence()
@@ -488,17 +478,19 @@ class Coder:
             self.io.tool_error(" - Use /clear to clear chat history.")
             return
 
-        if self.partial_response_function_call:
-            args = self.parse_partial_args()
-            if args:
-                content = args["explanation"]
-            else:
-                content = ""
-        elif self.partial_response_content:
-            content = self.partial_response_content
-        else:
+        if self.partial_response_function_call and (
+            args := self.parse_partial_args()
+        ):
+            content = args["explanation"]
+        elif (
+            self.partial_response_function_call
+            and not (args := self.parse_partial_args())
+            or not self.partial_response_function_call
+            and not self.partial_response_content
+        ):
             content = ""
-
+        else:
+            content = self.partial_response_content
         if interrupted:
             self.io.tool_error("\n\n^C KeyboardInterrupt")
             self.num_control_c += 1
@@ -526,43 +518,38 @@ class Coder:
 
             self.move_back_cur_messages(saved_message)
 
-        add_rel_files_message = self.check_for_file_mentions(content)
-        if add_rel_files_message:
+        if add_rel_files_message := self.check_for_file_mentions(content):
             return add_rel_files_message
 
     def update_cur_messages(self, content, edited):
         self.cur_messages += [dict(role="assistant", content=content)]
 
     def auto_commit(self):
-        res = self.commit(history=self.cur_messages, prefix="aider: ")
-        if res:
+        if res := self.commit(history=self.cur_messages, prefix="aider: "):
             commit_hash, commit_message = res
             self.last_aider_commit_hash = commit_hash
 
-            saved_message = self.gpt_prompts.files_content_gpt_edits.format(
+            return self.gpt_prompts.files_content_gpt_edits.format(
                 hash=commit_hash,
                 message=commit_message,
             )
         else:
             if self.repo:
                 self.io.tool_error("Warning: no changes found in tracked files.")
-            saved_message = self.gpt_prompts.files_content_gpt_no_edits
-
-        return saved_message
+            return self.gpt_prompts.files_content_gpt_no_edits
 
     def check_for_file_mentions(self, content):
-        words = set(word for word in content.split())
+        words = set(content.split())
 
         # drop sentence punctuation from the end
-        words = set(word.rstrip(",.!;") for word in words)
+        words = {word.rstrip(",.!;") for word in words}
 
         # strip away all kinds of quotes
         quotes = "".join(['"', "'", "`"])
-        words = set(word.strip(quotes) for word in words)
+        words = {word.strip(quotes) for word in words}
 
         addable_rel_fnames = self.get_addable_relative_files()
 
-        mentioned_rel_fnames = set()
         fname_to_rel_fnames = {}
         for rel_fname in addable_rel_fnames:
             fname = os.path.basename(rel_fname)
@@ -570,10 +557,11 @@ class Coder:
                 fname_to_rel_fnames[fname] = []
             fname_to_rel_fnames[fname].append(rel_fname)
 
-        for fname, rel_fnames in fname_to_rel_fnames.items():
-            if len(rel_fnames) == 1 and fname in words:
-                mentioned_rel_fnames.add(rel_fnames[0])
-
+        mentioned_rel_fnames = {
+            rel_fnames[0]
+            for fname, rel_fnames in fname_to_rel_fnames.items()
+            if len(rel_fnames) == 1 and fname in words
+        }
         if not mentioned_rel_fnames:
             return
 
@@ -614,15 +602,14 @@ class Coder:
         hash_object = hashlib.sha1(json.dumps(kwargs, sort_keys=True).encode())
         self.chat_completion_call_hashes.append(hash_object.hexdigest())
 
-        res = openai.ChatCompletion.create(**kwargs)
-        return res
+        return openai.ChatCompletion.create(**kwargs)
 
     def send(self, messages, model=None, silent=False, functions=None):
         if not model:
             model = self.main_model.name
 
         self.partial_response_content = ""
-        self.partial_response_function_call = dict()
+        self.partial_response_function_call = {}
 
         interrupted = False
         try:
@@ -638,9 +625,7 @@ class Coder:
             if self.partial_response_content:
                 self.io.ai_output(self.partial_response_content)
             elif self.partial_response_function_call:
-                # TODO: push this into subclasses
-                args = self.parse_partial_args()
-                if args:
+                if args := self.parse_partial_args():
                     self.io.ai_output(json.dumps(args, indent=4))
 
         return interrupted
@@ -695,10 +680,7 @@ class Coder:
         self.io.console.print(tokens)
 
     def show_send_output_stream(self, completion, silent):
-        live = None
-        if self.pretty and not silent:
-            live = Live(vertical_overflow="scroll")
-
+        live = Live(vertical_overflow="scroll") if self.pretty and not silent else None
         try:
             if live:
                 live.start()
@@ -801,8 +783,7 @@ class Coder:
         if self.pretty:
             args = ["--color"] + list(args)
 
-        diffs = self.repo.git.diff(*args)
-        return diffs
+        return self.repo.git.diff(*args)
 
     def commit(self, history=None, prefix=None, ask=False, message=None, which="chat_files"):
         repo = self.repo
@@ -911,9 +892,7 @@ class Coder:
 
     def get_last_modified(self):
         files = self.get_all_abs_files()
-        if not files:
-            return 0
-        return max(Path(path).stat().st_mtime for path in files)
+        return 0 if not files else max(Path(path).stat().st_mtime for path in files)
 
     def get_addable_relative_files(self):
         return set(self.get_all_relative_files()) - set(self.get_inchat_relative_files())
@@ -958,8 +937,7 @@ class Coder:
             return []
         # convert to appropriate os.sep, since git always normalizes to /
         files = set(self.repo.git.ls_files().splitlines())
-        res = set(str(Path(PurePosixPath(path))) for path in files)
-        return res
+        return {str(Path(PurePosixPath(path))) for path in files}
 
     apply_update_errors = 0
 
