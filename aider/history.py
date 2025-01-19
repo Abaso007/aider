@@ -1,5 +1,4 @@
 import argparse
-import json
 
 from aider import models, prompts
 from aider.dump import dump  # noqa: F401
@@ -7,11 +6,12 @@ from aider.sendchat import simple_send_with_retries
 
 
 class ChatSummary:
-    def __init__(self, client, model=models.Model.weak_model(), max_tokens=1024):
-        self.client = client
-        self.tokenizer = model.tokenizer
+    def __init__(self, models=None, max_tokens=1024):
+        if not models:
+            raise ValueError("At least one model must be provided")
+        self.models = models if isinstance(models, list) else [models]
         self.max_tokens = max_tokens
-        self.model = model
+        self.token_count = self.models[0].token_count
 
     def too_big(self, messages):
         sized = self.tokenize(messages)
@@ -21,11 +21,14 @@ class ChatSummary:
     def tokenize(self, messages):
         sized = []
         for msg in messages:
-            tokens = len(self.tokenizer.encode(json.dumps(msg)))
+            tokens = self.token_count(msg)
             sized.append((tokens, msg))
         return sized
 
     def summarize(self, messages, depth=0):
+        if not self.models:
+            raise ValueError("No models available for summarization")
+
         sized = self.tokenize(messages)
         total = sum(tokens for tokens, _msg in sized)
         if total <= self.max_tokens and depth == 0:
@@ -58,10 +61,28 @@ class ChatSummary:
         head = messages[:split_index]
         tail = messages[split_index:]
 
-        summary = self.summarize_all(head)
+        sized = sized[:split_index]
+        head.reverse()
+        sized.reverse()
+        keep = []
+        total = 0
+
+        # These sometimes come set with value = None
+        model_max_input_tokens = self.models[0].info.get("max_input_tokens") or 4096
+        model_max_input_tokens -= 512
+
+        for i in range(split_index):
+            total += sized[i][0]
+            if total > model_max_input_tokens:
+                break
+            keep.append(head[i])
+
+        keep.reverse()
+
+        summary = self.summarize_all(keep)
 
         tail_tokens = sum(tokens for tokens, msg in sized[split_index:])
-        summary_tokens = len(self.tokenizer.encode(json.dumps(summary)))
+        summary_tokens = self.token_count(summary)
 
         result = summary + tail
         if summary_tokens + tail_tokens < self.max_tokens:
@@ -80,17 +101,21 @@ class ChatSummary:
             if not content.endswith("\n"):
                 content += "\n"
 
-        messages = [
+        summarize_messages = [
             dict(role="system", content=prompts.summarize),
             dict(role="user", content=content),
         ]
 
-        summary = simple_send_with_retries(self.client, self.model.name, messages)
-        if summary is None:
-            raise ValueError(f"summarizer unexpectedly failed for {self.model.name}")
-        summary = prompts.summary_prefix + summary
+        for model in self.models:
+            try:
+                summary = simple_send_with_retries(model, summarize_messages)
+                if summary is not None:
+                    summary = prompts.summary_prefix + summary
+                    return [dict(role="user", content=summary)]
+            except Exception as e:
+                print(f"Summarization failed for model {model.name}: {str(e)}")
 
-        return [dict(role="user", content=summary)]
+        raise ValueError("summarizer unexpectedly failed for all models")
 
 
 def main():
@@ -98,35 +123,14 @@ def main():
     parser.add_argument("filename", help="Markdown file to parse")
     args = parser.parse_args()
 
+    model_names = ["gpt-3.5-turbo", "gpt-4"]  # Add more model names as needed
+    model_list = [models.Model(name) for name in model_names]
+    summarizer = ChatSummary(model_list)
+
     with open(args.filename, "r") as f:
         text = f.read()
 
-    messages = []
-    assistant = []
-    for line in text.splitlines(keepends=True):
-        if line.startswith("# "):
-            continue
-        if line.startswith(">"):
-            continue
-        if line.startswith("#### /"):
-            continue
-
-        if line.startswith("#### "):
-            if assistant:
-                assistant = "".join(assistant)
-                if assistant.strip():
-                    messages.append(dict(role="assistant", content=assistant))
-                assistant = []
-
-            content = line[5:]
-            if content.strip() and content.strip() != "<blank>":
-                messages.append(dict(role="user", content=line[5:]))
-            continue
-
-        assistant.append(line)
-
-    summarizer = ChatSummary(models.Model.weak_model())
-    summary = summarizer.summarize(messages[-40:])
+    summary = summarizer.summarize_chat_history_markdown(text)
     dump(summary)
 
 
